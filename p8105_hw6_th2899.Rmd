@@ -133,13 +133,141 @@ weather_df %>%
 
 As with r^2, this distribution is somewhat skewed and has some outliers. 
 
+
 ## Problem 2
 
+Importing the data and doing some high-level cleaning:
+
+```{r}
+homicide_raw = read.csv("./data/homicide-data.csv") %>% 
+  janitor::clean_names()
+```
+
+In the following chunk I'm cleaning the dataset as instructed, including:
+1. Creating a city_state variable (e.g. “Baltimore, MD”)
+2. Creating a binary variable indicating whether the homicide is solved
+3. Omiting cities Dallas, TX; Phoenix, AZ; and Kansas City, MO – these don’t report victim race. Also omit Tulsa, AL – this is a data entry mistake. 
+4. Limiting  analysis those for whom victim_race is white or black
+5. Making victim_age numeric
+
+```{r}
+homicide_df =
+  homicide_raw %>% 
+  mutate(city_state = paste(city, state, sep=", ")) %>% 
+  filter(!city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL")) %>% 
+  filter(victim_race %in% c("Black", "White")) %>% 
+  mutate(
+    status_solved = as.numeric(disposition == "Closed by arrest"),
+    victim_age = as.numeric(victim_age)
+  ) %>% 
+  select(city_state, status_solved, victim_age, victim_sex, victim_race)
+```
+
+
+homicide_df = homicide_raw %>% 
+  mutate(city_state = str_c(city, ", ", state),
+         status_solved = as.numeric(disposition == "Closed by arrest")
+         ) %>% 
+  filter(city_state != c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"),
+         victim_race %in%  c("Black", "White")) %>%
+  mutate(victim_age = as.numeric(victim_age)) %>% 
+  drop_na(victim_age) %>% 
+  relocate(city_state)
 
 
 
 
 
+For the city of Baltimore, MD, I use the glm function to fit a logistic regression with resolved vs unresolved as the outcome and victim age, sex and race as predictors; including the following steps:
+1. Saving the output of glm as an R object
+2. Applying the broom::tidy to this object
+3. Obtain the estimate and confidence interval of the adjusted odds ratio for solving homicides comparing male victims to female victims keeping all other variables fixed.
+
+Steps 1 and 2:
+
+```{r}
+fit_logistic =
+  homicide_df %>% 
+  filter(city_state == "Baltimore, MD") %>% 
+  glm(status_solved ~ victim_age + victim_sex + victim_race, data = ., family = binomial()) %>%
+  broom::tidy() %>% 
+  filter(term == "victim_sexMale") %>% 
+  select(term, estimate, std.error) %>% 
+  mutate(
+    odds_ratio = exp(estimate),
+    low_conf = exp(estimate - 1.96*std.error),
+    upper_conf = exp(estimate + 1.96*std.error)) %>% 
+  select(-estimate, -std.error)
+```
+
+```{r}
+fit_logistic %>%
+  knitr::kable(digits = 3)
+```
+
+Interpretation: those victims who were male, had an estimated 0.426x the odds of having their homicide resolved compared to female victims. 
+
+
+Next, I ran glm for each of the cities in the dataset, and extracted the adjusted odds ratio (and CI) for solving homicides comparing male victims to female victims by:
+1. Using a “tidy” pipeline, making use of purrr::map, 
+2. Listing columns, 
+3. Unnesting to create a dataframe with estimated ORs and CIs for each city
+
+```{r}
+fit_logistic_2 = 
+  homicide_df %>%
+  nest(data = -city_state) %>% 
+  mutate(model = map(data, ~glm(status_solved ~ victim_age + victim_sex + victim_race, data = ., family = binomial())),
+         results = map(model, broom::tidy)) %>% 
+  select(-data, -model) %>% 
+  unnest(results) %>% 
+  filter(term == "victim_sexMale") %>% 
+  select(city_state, term, estimate, std.error) %>% 
+  mutate(
+    odds_ratio = exp(estimate),
+    low_conf = exp(estimate - 1.96*std.error),
+    upper_conf = exp(estimate + 1.96*std.error)) %>% 
+  select(-estimate, -std.error)
+```
+
+```{r}
+fit_logistic_2 %>% 
+  knitr::kable(digits = 3)
+```
+
+Lastly, I created a plot that shows the estimated ORs and CIs for each city and organizes cities according to estimated OR:
+
+```{r}
+fit_logistic_2 %>% 
+  mutate(city_state = fct_reorder(city_state, odds_ratio)) %>% 
+  ggplot(aes(x=city_state, y = odds_ratio)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = low_conf, ymax = upper_conf), width = 0.4) +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 90))
+```
+
+For most cities included in this statistics, female victims have higher odds of getting their homicide cases resolved. For most cases, we can say this with certainty as the their respective confidence intervals do no cross 1. Only three cases exist where males have the higher odds: Fresno, Stockton, and Albuquerque. Potentially, this is caused by a low number of female victims in the statistics that by chance remained unresolved. in all three cases the CI crosses the 1 odds_ratio line, meaning they are not statistically significant.
+
+
+## Problem 2
+
+First, Load and clean the data for regression analysis (i.e. convert numeric to factor where appropriate, check for missing data, etc.).
+
+
+
+
+
+
+
+Propose a regression model for birthweight. This model may be based on a hypothesized structure for the factors that underly birthweight, on a data-driven model-building process, or a combination of the two. Describe your modeling process and show a plot of model residuals against fitted values – use add_predictions and add_residuals in making this plot.
+
+Compare your model to two others:
+
+One using length at birth and gestational age as predictors (main effects only)
+One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+Make this comparison in terms of the cross-validated prediction error; use crossv_mc and functions in purrr as appropriate.
+
+Note that although we expect your model to be reasonable, model building itself is not a main idea of the course and we don’t necessarily expect your model to be “optimal”.
 
 
 
