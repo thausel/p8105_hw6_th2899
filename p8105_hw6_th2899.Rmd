@@ -8,8 +8,12 @@ output: github_document
 
 ```{r}
 library(tidyverse)
-library(p8105.datasets)
-library(moderndive)
+library(viridis)
+library(modelr)
+
+
+#library(p8105.datasets)
+#library(moderndive)
 
 set.seed(1)
 
@@ -48,6 +52,88 @@ weather_df =
   select(name, id, everything())
 ```
 
+In the following problem, we’ll focus on a simple linear regression with tmax as the response and tmin as the predictor, and are interested in the distribution of two quantities estimated from these data: r^2 and log(β^0∗β^1. We use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. 
+
+First, for r^2: To obtain a distribution for r^2, we'll follow basically the same procedure we used for regression coefficients: draw bootstrap samples; the a model to each; extract the value I'm concerned with; and summarize. Here, we'll use `modelr::bootstrap` to draw the samples and `broom::glance` to produce `r.squared` values. 
+
+```{r}
+weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::glance)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  summarize(
+    mean_r_sq = mean(r.squared),
+    sd_r_sq = sd(r.squared),
+    ci_lower = quantile(r.squared, 0.025), 
+    ci_upper = quantile(r.squared, 0.975)
+    )
+```
+
+Then, plotting the distrbution of r^2:
+
+```{r}
+weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::glance)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  ggplot(aes(x = r.squared)) + geom_density()
+```
+
+In this example, the r^2 value is high, and the upper bound at 1 may be a cause for the generally skewed shape of the distribution. If we wanted to construct a confidence interval for r^2, we could take the 2.5% and 97.5% quantiles of the estimates across bootstrap samples. However, because the shape isn't symmetric, using the mean +/- 1.96 times the standard error probably wouldn't work well.
+
+
+Next, we move on to computing log(β^0∗β^1: We can produce a distribution for log(β^0∗β^1 using a similar approach, with a bit more wrangling before we make our plot.
+
+```{r}
+weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  select(id = `.id`, term, estimate) %>% 
+  pivot_wider(
+    names_from = term, 
+    values_from = estimate) %>% 
+  rename(beta0 = `(Intercept)`, beta1 = tmin) %>% 
+  mutate(log_b0b1 = log(beta0 * beta1)) %>% 
+  summarize(
+    mean_log_b0b1 = mean(log_b0b1),
+    sd_log_b0b1 = sd(log_b0b1),
+    ci_lower = quantile(log_b0b1, 0.025), 
+    ci_upper = quantile(log_b0b1, 0.975)
+  )
+```
+
+Now we plot the distribution of log(β^0∗β^1:
+
+```{r}
+weather_df %>% 
+  modelr::bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x) ),
+    results = map(models, broom::tidy)) %>% 
+  select(-strap, -models) %>% 
+  unnest(results) %>% 
+  select(id = `.id`, term, estimate) %>% 
+  pivot_wider(
+    names_from = term, 
+    values_from = estimate) %>% 
+  rename(beta0 = `(Intercept)`, beta1 = tmin) %>% 
+  mutate(log_b0b1 = log(beta0 * beta1)) %>% 
+  ggplot(aes(x = log_b0b1)) + geom_density()
+```
+
+As with r^2, this distribution is somewhat skewed and has some outliers. 
+
+## Problem 2
 
 
 
